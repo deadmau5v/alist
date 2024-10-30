@@ -27,7 +27,7 @@ type Addition struct {
 	ClientID     string `json:"client_id" type:"text"`
 	ClientSecret string `json:"client_secret" type:"text"`
 
-	RootFolderID int64 `json:"root_folder_id" type:"number"`
+	RootFolderID int `json:"root_folder_id" type:"number"`
 	access_token string
 }
 

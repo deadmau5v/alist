@@ -1,14 +1,14 @@
 package _123LinkDir
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/alist-org/alist/v3/pkg/utils"
 )
 
 type File struct {
-	FileId       int64  `json:"fileId"`
+	FileId       int    `json:"fileId"`
 	FileName     string `json:"filename"`
 	Type         int    `json:"type"`
 	Size         int64  `json:"size"`
@@ -27,11 +27,11 @@ func (f *File) GetName() string {
 }
 
 func (f *File) ModTime() time.Time {
-	return time.Unix(0, f.FileId)
+	return time.Now()
 }
 
 func (f *File) CreateTime() time.Time {
-	return time.Unix(0, f.FileId)
+	return time.Now()
 }
 
 func (f *File) IsDir() bool {
@@ -43,7 +43,7 @@ func (f *File) GetHash() utils.HashInfo {
 }
 
 func (f *File) GetID() string {
-	return fmt.Sprintf("%d", f.FileId)
+	return strconv.Itoa(f.FileId)
 }
 
 func (f *File) GetPath() string {

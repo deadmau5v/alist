@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/alist-org/alist/v3/drivers/base"
 	"github.com/alist-org/alist/v3/internal/driver"
@@ -28,7 +29,6 @@ func (d *Pan123LinkDir) GetAddition() driver.Additional {
 }
 
 func (d *Pan123LinkDir) Init(ctx context.Context) error {
-	// TODO 登录 / 刷新令牌
 	req := base.RestyClient.R()
 	req.SetHeader(
 		"Platform", "open_platform",
@@ -68,18 +68,12 @@ func (d *Pan123LinkDir) Drop(ctx context.Context) error {
 func (d *Pan123LinkDir) List(ctx context.Context, dir model.Obj, args model.ListArgs) ([]model.Obj, error) {
 	url := OpenAPIBaseURL + "/api/v2/file/list"
 
-	req := base.RestyClient.R()
-	parentID := dir.GetID()
-	if parentID == "" && d.RootFolderID != 0 {
-		parentID = fmt.Sprintf("%d", d.RootFolderID)
-	} else if parentID == "" {
-		parentID = "0"
-	}
+	req := base.RestyClient.R().
+		SetQueryParam("parentFileId", GetObjID(dir)).
+		SetQueryParam("limit", "100").
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
 
-	req.SetQueryParam("parentFileId", parentID)
-	req.SetQueryParam("limit", "100")
-	req.SetHeader("Authorization", "Bearer "+d.access_token)
-	req.SetHeader("Platform", "open_platform")
 	res, err := req.Execute(http.MethodGet, url)
 	if err != nil {
 		return nil, err
@@ -123,37 +117,135 @@ func (d *Pan123LinkDir) Link(ctx context.Context, file model.Obj, args model.Lin
 }
 
 func (d *Pan123LinkDir) MakeDir(ctx context.Context, parentDir model.Obj, dirName string) (model.Obj, error) {
-	// TODO 创建文件夹，选填
-	return nil, errs.NotImplement
+	url := OpenAPIBaseURL + "/upload/v1/file/mkdir"
+
+	req := base.RestyClient.R().
+		SetBody(map[string]string{
+			"name":     dirName,
+			"parentID": GetObjID(parentDir),
+		}).
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
+
+	res, err := req.Execute(http.MethodPost, url)
+	if err != nil {
+		return nil, err
+	}
+
+	body := res.Body()
+	bodyStruct := struct {
+		Data struct {
+			DirID int `json:"dirID"`
+		} `json:"data"`
+	}{}
+
+	_parentDir, err := strconv.Atoi(GetObjID(parentDir))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(body, &bodyStruct)
+	if err != nil {
+		return nil, err
+	}
+	file := File{
+		FileId:       bodyStruct.Data.DirID,
+		FileName:     dirName,
+		ParentFileId: int64(_parentDir),
+		Type:         1,
+	}
+
+	return &file, nil
 }
 
 func (d *Pan123LinkDir) Move(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj, error) {
-	// TODO 移动对象，选填
-	return nil, errs.NotImplement
+	url := OpenAPIBaseURL + "/api/v1/file/move"
+
+	req := base.RestyClient.R().
+		SetBody(map[string]any{
+			"fileIDs":        []any{GetObjID(srcObj)},
+			"toParentFileID": GetObjID(dstDir),
+		}).
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
+
+	_, err := req.Execute(http.MethodPost, url)
+	if err != nil {
+		return nil, err
+	}
+
+	return srcObj, nil
 }
 
 func (d *Pan123LinkDir) Rename(ctx context.Context, srcObj model.Obj, newName string) (model.Obj, error) {
-	// TODO 重命名对象，选填
-	return nil, errs.NotImplement
+	url := OpenAPIBaseURL + "/api/v1/file/rename"
+
+	req := base.RestyClient.R().
+		SetBody(map[string]any{
+			"renameList": []string{fmt.Sprintf("%s|%s", GetObjID(srcObj), newName)},
+		}).
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
+
+	_, err := req.Execute(http.MethodPost, url)
+	if err != nil {
+		return nil, err
+	}
+
+	objID, err := strconv.Atoi(GetObjID(srcObj))
+	if err != nil {
+		return nil, err
+	}
+
+	file := File{
+		FileId:   objID,
+		FileName: newName,
+		Type:     0,
+	}
+
+	if srcObj.IsDir() {
+		file.Type = 1
+	}
+
+	return &file, nil
 }
 
 func (d *Pan123LinkDir) Copy(ctx context.Context, srcObj, dstDir model.Obj) (model.Obj, error) {
-	// TODO 复制对象，选填
 	return nil, errs.NotImplement
 }
 
 func (d *Pan123LinkDir) Remove(ctx context.Context, obj model.Obj) error {
-	// TODO 删除对象，选填
-	return errs.NotImplement
+	url := OpenAPIBaseURL + "/api/v1/file/trash"
+	url_delete := OpenAPIBaseURL + "/api/v1/file/delete"
+
+	req := base.RestyClient.R().
+		SetBody(map[string]any{
+			"fileIDs": []any{obj.GetID()},
+		}).
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
+
+	_, err := req.Execute(http.MethodPost, url)
+	if err != nil {
+		return err
+	}
+
+	req_delete := base.RestyClient.R().
+		SetBody(map[string]any{
+			"fileIDs": []any{obj.GetID()},
+		}).
+		SetHeader("Authorization", "Bearer "+d.access_token).
+		SetHeader("Platform", "open_platform")
+
+	_, err = req_delete.Execute(http.MethodPost, url_delete)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *Pan123LinkDir) Put(ctx context.Context, dstDir model.Obj, stream model.FileStreamer, up driver.UpdateProgress) (model.Obj, error) {
-	// TODO 上传文件，选填
 	return nil, errs.NotImplement
 }
-
-//func (d *Pan123LinkDir) Other(ctx context.Context, args model.OtherArgs) (interface{}, error) {
-//	return nil, errs.NotSupport
-//}
 
 var _ driver.Driver = (*Pan123LinkDir)(nil)
